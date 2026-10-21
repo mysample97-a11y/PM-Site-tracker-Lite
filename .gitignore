@@ -1,0 +1,34 @@
+# Test-only dependencies. The app itself has none.
+node_modules/
+
+# Workbooks hold project data. Only the shipped template is allowed in the repo.
+*.xlsx
+*.xlsm
+*.xls
+!templates/*.xlsx
+
+# Session files contain project data. Keep them out of the repo unless you have
+# deliberately checked what is in one.
+*.session.json
+*session*.json
+bimtrack-session-*.json
+
+# Your private code lookup must never be committed. It is the file that turns
+# A-01 back into a real client and site.
+lookup*
+*private*
+*confidential*
+
+# Secrets. The app needs none, but an accidental local file must not be pushable.
+.env
+.env.*
+*.key
+*.pem
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+npm-debug.log*

@@ -1,0 +1,329 @@
+/* ============================================================
+   Layout: a fixed left rail and a single scrolling work column.
+
+   The rail holds the things you glance at constantly — usage against your
+   limits, where each site stands, session controls. Those must never scroll
+   away mid-run, so the rail is fixed to the viewport and the work column
+   scrolls independently underneath it.
+   ============================================================ */
+
+.shell { min-height: 100vh; }
+
+/* ---------------------------- fixed rail ---------------------------- */
+
+.rail {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--rail-w);
+  background: var(--block);
+  color: var(--ink-inv);
+  border-right: 1px solid var(--rule-inv);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+
+.rail__brand {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-4);
+  border-bottom: 1px solid var(--rule-inv);
+  flex: 0 0 auto;
+}
+.rail__mark {
+  font-family: var(--font-block);
+  font-weight: 700;
+  font-size: var(--t-sm);
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--blueprint);
+  padding: 6px 9px;
+  border-radius: var(--r-md);
+}
+.rail__name { color: #fff; font-weight: 600; font-size: var(--t-base); line-height: 1.25; }
+.rail__sub  { color: var(--ink-inv-2); font-size: var(--t-xs); margin-top: 2px; }
+
+/* The one scrollable part of the rail, so a long risk list can never push the
+   session buttons off the bottom of the screen. */
+.rail__scroll { flex: 1 1 auto; overflow-y: auto; padding: var(--s-4); }
+.rail__scroll::-webkit-scrollbar { width: 8px; }
+.rail__scroll::-webkit-scrollbar-thumb { background: var(--rule-inv); border-radius: 4px; }
+
+.rail__foot {
+  flex: 0 0 auto;
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--rule-inv);
+  display: grid; gap: 6px; grid-template-columns: 1fr 1fr;
+}
+.rail__foot .btn--wide { grid-column: 1 / -1; }
+.rail .btn {
+  background: var(--block-2);
+  border-color: var(--rule-inv);
+  color: var(--ink-inv);
+}
+.rail .btn:hover { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.rail .btn--primary { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+
+/* Panels inside the rail sit on the deep background rather than white. */
+.railcard {
+  background: var(--block-3);
+  border: 1px solid var(--rule-inv);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  margin-bottom: var(--s-3);
+}
+.railcard__head {
+  display: flex; align-items: baseline; gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.railcard__head h3 {
+  font-size: var(--t-sm); font-weight: 600; color: #fff;
+  letter-spacing: 0.01em; margin: 0;
+}
+.railcard__head .tag { margin-left: auto; font-size: var(--t-xs); color: var(--ink-inv-2); }
+.railrow {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: var(--t-xs); color: var(--ink-inv-2); margin-bottom: 3px;
+}
+.railrow strong { color: #fff; font-family: var(--font-data); font-weight: 600; }
+.railbar { height: 5px; background: #15113a; border-radius: 3px; overflow: hidden; margin-bottom: var(--s-3); }
+.railbar > div { height: 100%; border-radius: 3px; background: var(--blueprint); }
+.railbar[data-tone="hivis"] > div { background: var(--hivis); }
+.railbar[data-tone="survey"] > div { background: var(--survey); }
+.railnote { font-size: var(--t-xs); color: var(--ink-inv-2); line-height: 1.45; }
+
+.railsite {
+  display: grid; grid-template-columns: 62px 1fr 44px; gap: 8px;
+  align-items: center; margin-bottom: 7px; font-size: var(--t-xs);
+}
+.railsite .code { color: #fff; font-weight: 600; }
+.railsite .track { height: 6px; background: #15113a; border-radius: 3px; overflow: hidden; }
+.railsite .track > div { height: 100%; background: var(--sign); border-radius: 3px; }
+.railsite .val { text-align: right; font-family: var(--font-data); color: var(--ink-inv-2); }
+.railsite .late { color: #FF9C9C; }
+
+/* ---------------------------- work column ---------------------------- */
+
+.work {
+  margin-left: var(--rail-w);
+  min-height: 100vh;
+  padding: var(--s-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  max-width: 1500px;
+}
+
+@media (max-width: 1080px) {
+  .rail { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--rule-inv); }
+  .rail__scroll { max-height: none; }
+  .work { margin-left: 0; padding: var(--s-3); }
+}
+
+/* ---------------- numbered steps ---------------- */
+
+.step .sheet__head { gap: var(--s-3); background: var(--sheet-alt); border-bottom: 1px solid var(--rule); }
+.step__n {
+  flex: 0 0 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--blueprint); color: #fff;
+  font-size: var(--t-xs); font-weight: 700;
+}
+
+/* ---------------- selection checkboxes ---------------- */
+
+.picks {
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+.pick {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-md);
+  background: var(--sheet);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.pick:hover { border-color: var(--blueprint); background: var(--blueprint-lo); }
+.pick input { accent-color: var(--blueprint); flex: 0 0 auto; width: 16px; height: 16px; }
+.pick--done { background: var(--sign-lo); border-color: #B4E3D0; color: #0A6A48; }
+.pick--done input { accent-color: var(--sign); }
+.pick--done .strong { color: #0A6A48; }
+.pick--active { border-color: var(--hivis); background: var(--hivis-lo); }
+.pick--master { grid-column: 1 / -1; border-style: dashed; border-color: var(--rule-hard); background: var(--sheet-alt); }
+.pick--master.pick--done { border-style: solid; }
+
+/* ---------------- report ---------------- */
+
+.report { overflow: hidden; border-color: var(--rule-hard); }
+.report__head {
+  width: 100%;
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--blueprint);
+  border: 0;
+  cursor: pointer; text-align: left;
+  font: inherit; color: #fff;
+}
+.report__head:hover { background: var(--blueprint-hi); }
+.report__head .xs { color: rgba(255,255,255,0.72); }
+.report__body { padding: 0; }
+
+/* Each of the eight report sections is a banded block, so the structure is
+   obvious at a glance and nothing runs together. */
+.rsec { border-bottom: 1px solid var(--rule-soft); }
+.rsec:last-child { border-bottom: 0; }
+.rsec__head {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  background: var(--sheet-alt);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.rsec__n {
+  flex: 0 0 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--blueprint-lo); color: var(--blueprint);
+  font-size: var(--t-xs); font-weight: 700;
+}
+.rsec__head h4 { margin: 0; font-size: var(--t-sm); font-weight: 650; color: var(--ink); }
+.rsec__body { padding: var(--s-4); }
+.rsec__body > p:last-child { margin-bottom: 0; }
+.rsec__body ul { margin: 0 0 var(--s-3); padding-left: 1.15rem; }
+.rsec__body li { font-size: var(--t-sm); margin-bottom: 5px; }
+
+/* Computed figures inside a section, kept visually distinct from AI prose so
+   the reader always knows which is which. */
+.figs {
+  display: grid; gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  margin-bottom: var(--s-3);
+}
+.fig { background: var(--sheet); padding: var(--s-2) var(--s-3); }
+.fig__k { font-size: var(--t-xs); color: var(--ink-3); }
+.fig__v { font-size: var(--t-md); font-weight: 650; font-family: var(--font-data); line-height: 1.3; }
+.fig__n { font-size: var(--t-xs); color: var(--ink-2); }
+.fig[data-tone="sign"]   .fig__v { color: var(--sign); }
+.fig[data-tone="hivis"]  .fig__v { color: var(--hivis); }
+.fig[data-tone="survey"] .fig__v { color: var(--survey); }
+
+.aiprose { border-left: 3px solid var(--plum); padding-left: var(--s-3); }
+.aiprose::before {
+  content: 'Interpretation';
+  display: block;
+  font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--plum); font-weight: 700; margin-bottom: 3px;
+}
+
+/* ---------------- charts ---------------- */
+
+.chartwrap { margin-bottom: var(--s-4); }
+.chartwrap:last-child { margin-bottom: 0; }
+.charttitle {
+  font-size: var(--t-sm); font-weight: 650; color: var(--ink);
+  margin-bottom: 2px;
+}
+.chartnote { font-size: var(--t-xs); color: var(--ink-3); margin-bottom: var(--s-2); }
+.chartbox { width: 100%; overflow-x: auto; }
+.chartbox svg { display: block; max-width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--s-3); font-size: var(--t-xs); color: var(--ink-2); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 11px; height: 11px; border-radius: 2px; display: inline-block; flex: 0 0 11px; }
+
+/* ---------------- misc ---------------- */
+
+.payload-preview { max-height: 380px; }
+.prevbox { background: var(--plum-lo); border-color: #DDD1FA; }
+
+@media print {
+  .rail, .step, .dropzone { display: none !important; }
+  .work { margin-left: 0; padding: 0; }
+}
+
+/* ============================================================
+   Fixes and additions
+   ============================================================ */
+
+/* The old base stylesheet made #app a flex container. That turned .shell into a
+   flex item sized by its CONTENT, so the page width changed with whatever was
+   loaded — which is why reloading a workbook collapsed the layout to half the
+   screen. The page is a plain block; the rail is fixed and the work column
+   takes the rest. */
+#app { display: block; }
+.shell { display: block; width: 100%; }
+.work  { max-width: none; width: auto; box-sizing: border-box; }
+
+/* The base stylesheet caps paragraphs at 72 characters for reading width.
+   Inside the work column that left report text in a narrow strip with empty
+   space to the right, so paragraphs here use the full width of their panel. */
+.work p, .work li, .notice p { max-width: none; }
+
+/* ---------------- top bar inside the work column ---------------- */
+
+.workbar {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) 0 0;
+}
+.workbar__title { font-size: var(--t-lg); font-weight: 650; color: var(--ink); }
+.workbar__sub { font-size: var(--t-xs); color: var(--ink-3); }
+.btn--clear {
+  border-color: #F3B8B8; color: var(--survey); background: var(--sheet);
+}
+.btn--clear:hover { background: var(--survey-lo); border-color: var(--survey); color: var(--survey); }
+
+/* ---------------- collapsible sections and reports ---------------- */
+
+.collapse-btn {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--rule); border-radius: var(--r-md);
+  background: var(--sheet); color: var(--ink-2);
+  cursor: pointer; font-size: 12px; line-height: 1;
+  transition: transform 0.15s ease, background 0.12s ease;
+}
+.collapse-btn:hover { background: var(--blueprint-lo); border-color: var(--blueprint); color: var(--blueprint); }
+.is-collapsed .collapse-btn { transform: rotate(-90deg); }
+.step.is-collapsed > :not(.sheet__head) { display: none; }
+.step.is-collapsed .sheet__head { border-bottom: 0; }
+.report.is-collapsed .report__body { display: none; }
+.report__head .collapse-btn { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.3); color: #fff; }
+.report__head .collapse-btn:hover { background: rgba(255,255,255,0.26); }
+.step__summary { font-size: var(--t-xs); color: var(--ink-3); }
+
+/* ---------------- previous week ---------------- */
+
+.prevload {
+  display: grid; gap: var(--s-3);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+@media (max-width: 900px) { .prevload { grid-template-columns: 1fr; } }
+.dropzone--small { padding: var(--s-4); }
+.dropzone--small h3 { font-size: var(--t-base); }
+.dropzone.is-loaded { border-style: solid; border-color: #B4E3D0; background: var(--sign-lo); }
+.dropzone.is-loaded-prev { border-style: solid; border-color: #DDD1FA; background: var(--plum-lo); }
+
+.delta { font-family: var(--font-data); font-size: var(--t-xs); }
+.delta--up { color: var(--sign); }
+.delta--down { color: var(--survey); }
+.delta--flat { color: var(--ink-3); }
+
+/* ---------------- retry status ---------------- */
+
+.retrybar {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid #F3D9A8; border-left: 3px solid var(--hivis);
+  background: var(--hivis-lo); border-radius: var(--r-md);
+  font-size: var(--t-sm);
+}
+
+/* A site whose last run failed, so a part-finished batch reads at a glance. */
+.pick--failed { background: var(--survey-lo); border-color: #F3B8B8; }
+.pick--failed .strong { color: var(--survey); }

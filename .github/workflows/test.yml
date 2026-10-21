@@ -1,0 +1,63 @@
+name: Tests
+
+# Runs on every push and pull request. The page itself is not published yet:
+# a Pages deploy job is added in Stage 6, once there is a page to publish.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Never fails the build, so the log always shows what was actually checked
+      # out. A dropped file is the commonest cause of a failure and is invisible
+      # without this.
+      - name: Show what was checked out
+        continue-on-error: true
+        run: |
+          echo "node: $(node --version)"
+          find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | sort
+
+      - name: Check the files the tests depend on are present
+        run: |
+          missing=0
+          for f in \
+            "assets/vendor/xlsx.full.min.js" \
+            "assets/vendor/package.json" \
+            "templates/BIM-Multi-Site-Tracker-TEMPLATE.xlsx" \
+            "js/core/parser.js" \
+            "js/core/engine.js" \
+            "js/core/report.js" \
+            "js/core/brief.js" \
+            "tools/fixture.mjs"
+          do
+            if [ -f "$f" ]; then echo "  ok       $f"; else echo "  MISSING  $f"; missing=1; fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "A required file is not in the repository. This is almost always an"
+            echo "incomplete upload: small files inside folders and the binary .xlsx"
+            echo "template are the ones that get dropped."
+            exit 1
+          fi
+
+      # Catches a call to a function that does not exist. Syntax checks pass such
+      # code, and it fails only when that exact line runs.
+      - name: Check every function call resolves
+        run: node tools/check-refs.mjs
+
+      - name: Verify the parser, engine and report (ported from the full app)
+        run: node tools/verify-core.mjs
+
+      - name: Verify the one-page brief figures
+        run: node tools/verify-brief.mjs
