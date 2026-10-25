@@ -1,15 +1,22 @@
 {
   "name": "pm-site-tracker-lite",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Lighter site progress tracker: reads a tracker workbook, calculates the figures, and (optionally) asks an AI for a conclusion.",
+  "description": "Lighter site progress tracker: reads a tracker workbook, calculates the figures, and asks an AI only for the conclusion.",
   "type": "module",
   "scripts": {
     "check-refs": "node tools/check-refs.mjs",
     "test:core": "node tools/verify-core.mjs",
     "test:brief": "node tools/verify-brief.mjs",
-    "test": "node tools/check-refs.mjs && node tools/verify-core.mjs && node tools/verify-brief.mjs",
+    "test:ai": "node tools/verify-ai.mjs",
+    "test:view": "node tools/verify-view.mjs",
+    "test:ui": "node tools/smoke-dom.mjs",
+    "test": "node tools/check-refs.mjs && node tools/verify-core.mjs && node tools/verify-brief.mjs && node tools/verify-ai.mjs && node tools/verify-view.mjs && node tools/smoke-dom.mjs",
     "brief": "node tools/print-brief.mjs"
   },
-  "engines": { "node": ">=20" }
+  "devDependencies": {
+    "jsdom": "^30.1.3"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
 }

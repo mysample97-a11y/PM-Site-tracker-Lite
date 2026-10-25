@@ -1,7 +1,8 @@
-name: Tests
+name: Test and deploy
 
-# Runs on every push and pull request. The page itself is not published yet:
-# a Pages deploy job is added in Stage 6, once there is a page to publish.
+# Every push and pull request runs the tests. A push to main that passes them
+# also publishes the page to GitHub Pages. In Settings > Pages, Source must be
+# "GitHub Actions".
 on:
   push:
     branches: [main]
@@ -11,12 +12,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -29,18 +34,20 @@ jobs:
           echo "node: $(node --version)"
           find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | sort
 
-      - name: Check the files the tests depend on are present
+      - name: Check the files the page and tests depend on are present
         run: |
           missing=0
           for f in \
+            "index.html" \
+            "assets/css/lite.css" \
             "assets/vendor/xlsx.full.min.js" \
             "assets/vendor/package.json" \
             "templates/BIM-Multi-Site-Tracker-TEMPLATE.xlsx" \
-            "js/core/parser.js" \
-            "js/core/engine.js" \
-            "js/core/report.js" \
-            "js/core/brief.js" \
-            "tools/fixture.mjs"
+            "js/views/app.js" \
+            "js/core/parser.js" "js/core/engine.js" "js/core/report.js" "js/core/util.js" \
+            "js/core/brief.js" "js/core/briefview.js" "js/core/ai.js" "js/core/tokens.js" \
+            "js/core/session.js" "js/core/exports.js" \
+            "tools/fixture.mjs" "package-lock.json"
           do
             if [ -f "$f" ]; then echo "  ok       $f"; else echo "  MISSING  $f"; missing=1; fi
           done
@@ -51,13 +58,58 @@ jobs:
             exit 1
           fi
 
-      # Catches a call to a function that does not exist. Syntax checks pass such
-      # code, and it fails only when that exact line runs.
+      - name: Install test dependencies (jsdom; the page itself has none)
+        run: npm ci --no-audit --no-fund
+
+      # Catches a call to a function that does not exist. A syntax check passes
+      # such code and it fails only when that exact line runs.
       - name: Check every function call resolves
         run: node tools/check-refs.mjs
 
-      - name: Verify the parser, engine and report (ported from the full app)
+      - name: Parser, engine and report (ported from the full app)
         run: node tools/verify-core.mjs
 
-      - name: Verify the one-page brief figures
+      - name: One-page brief figures
         run: node tools/verify-brief.mjs
+
+      - name: AI layer (stubbed, no network)
+        run: node tools/verify-ai.mjs
+
+      - name: Page, exports and session
+        run: node tools/verify-view.mjs
+
+      # Boots the real page under jsdom and walks the whole workflow. A blank
+      # page with a green build is the failure this exists to catch.
+      - name: UI workflow
+        run: node tools/smoke-dom.mjs
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Publish only what the page needs. Tests, tools and anything else in the
+      # repository stay out of the public site.
+      - name: Assemble the site
+        run: |
+          mkdir _site
+          cp -r index.html assets js templates _site/
+          touch _site/.nojekyll
+          test -f _site/index.html
+          echo "Publishing:"; find _site -type f | sort
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

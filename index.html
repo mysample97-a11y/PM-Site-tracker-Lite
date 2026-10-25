@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site Progress Brief</title>
+<meta name="description" content="Turn a site progress tracker workbook into a one-page status brief. Runs in your browser; the workbook is never uploaded.">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23241E58'/%3E%3Cpath d='M6 24h5v-8H6zM13.5 24h5V8h-5zM21 24h5V13h-5z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/css/lite.css">
+<!-- SheetJS (Apache-2.0) is vendored, not loaded from a CDN, so the page makes no
+     third-party request except the one you explicitly ask for (the AI conclusion).
+     Licence: assets/vendor/XLSX-LICENSE.txt -->
+<script src="assets/vendor/xlsx.full.min.js"></script>
+</head>
+<body>
+<noscript>
+  <div style="padding:48px;max-width:60ch;margin:0 auto;font-family:system-ui,sans-serif">
+    <h1>JavaScript is required</h1>
+    <p>This tool reads your workbook and calculates every figure inside the browser. None of that is possible with JavaScript disabled.</p>
+  </div>
+</noscript>
+<div id="app"></div>
+<script type="module" src="js/views/app.js"></script>
+</body>
+</html>
