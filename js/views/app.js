@@ -8,6 +8,7 @@
 
 import { el, mount, toast, confirmDialog, openModal, clamp } from '../core/util.js';
 import { readWorkbook, parseWorkbook } from '../core/parser.js';
+import { dropMilestoneColumns, unregisteredSheets, otherProblems } from '../core/normalise.js';
 import { buildBrief, engineSummary } from '../core/brief.js';
 import { renderBriefHTML, BRIEF_CSS } from '../core/briefview.js';
 import {
@@ -41,7 +42,7 @@ const problemText = (p) => (typeof p === 'string' ? p : (p?.message || p?.text |
 
 async function parseFile(file) {
   const wb = await readWorkbook(file);
-  const model = parseWorkbook(wb);
+  const model = dropMilestoneColumns(parseWorkbook(wb));
   if (!model.sites?.length) {
     const why = (model.problems || []).map(problemText).slice(0, 3).join(' ');
     throw new Error(`No sites could be read from "${file.name}". ${why || 'Check it is a tracker workbook with a Sites sheet.'}`);
@@ -123,6 +124,14 @@ function readPanel(st) {
   if (!m) return null;
   const byCode = new Map((preview?.sites || []).map((s) => [s.code, s]));
   const withData = [...byCode.values()].filter((s) => !s.noData).length;
+  const noTab = [...byCode.values()].filter((s) => s.noData && /no detail sheet/.test(s.reason || '')).map((s) => s.code);
+  const noStatus = [...byCode.values()].filter((s) => s.noData && !/no detail sheet/.test(s.reason || '')).map((s) => s.code);
+  const unregistered = unregisteredSheets(m);
+  const redWarnings = (preview?.dataWarnings || []).filter((w) => w.severity === 'RED');
+  const summary = [`${st.workbookName}: ${m.sites.length} site${m.sites.length === 1 ? '' : 's'} in the register, ${withData} with weekly status.`];
+  if (noTab.length) summary.push(`${noTab.length} listed with no detail tab (${noTab.join(', ')}).`);
+  if (noStatus.length) summary.push(`${noStatus.length} with a tab but no weekly status (${noStatus.join(', ')}).`);
+  const summaryText = summary.join(' ');
 
   const rows = m.sites.map((s) => {
     const pv = byCode.get(s.code) || {};
@@ -130,6 +139,12 @@ function readPanel(st) {
     if (pv.noData) checks.push(el('span', { class: 'tag tag--warn', text: 'No weekly status' }));
     if (pv.privacy?.flagged) checks.push(el('span', { class: 'tag tag--warn', title: 'Possible personal or place names. Check before generating.', text: 'Possible names' }));
     if (s.matchedBy && s.matchedBy !== 'named in register') checks.push(el('span', { class: 'tag tag--warn', title: 'The detail sheet was matched by a guess. Confirm it is the right sheet.', text: `Sheet matched: ${s.matchedBy}` }));
+    const warns = pv.warnings || [];
+    const hdr = warns.find((w) => w.id === 'Q-HDR');
+    if (hdr) checks.push(el('span', { class: 'tag tag--bad', title: hdr.text, text: 'Sheet header disagrees' }));
+    if (warns.some((w) => w.id === 'NO-START' || w.id === 'NO-TARGET')) checks.push(el('span', { class: 'tag tag--warn', title: 'The register has no start or target date for this site, so pace cannot be measured.', text: 'Register date missing' }));
+    if (warns.some((w) => w.id === 'COLUMN')) checks.push(el('span', { class: 'tag tag--warn', title: warns.find((w) => w.id === 'COLUMN').text, text: 'Column left out' }));
+    if (warns.some((w) => w.id === 'STALE')) checks.push(el('span', { class: 'tag tag--warn', title: warns.find((w) => w.id === 'STALE').text, text: 'Status is old' }));
     if (pv.dataFindings) checks.push(el('span', { class: 'tag', text: `${pv.dataFindings} data check${pv.dataFindings === 1 ? '' : 's'}` }));
     const cb = el('input', { type: 'checkbox', 'aria-label': `Include ${s.code}`, checked: pendingSel?.has(s.code) ? true : null });
     cb.addEventListener('change', () => { cb.checked ? pendingSel.add(s.code) : pendingSel.delete(s.code); });
@@ -145,7 +160,7 @@ function readPanel(st) {
   });
 
   const sitePoints = m.sites.flatMap((s) => (s.detail?.problems || []).map((p) => `${s.code}: ${problemText(p)}`));
-  const problems = [...(m.problems || []).map(problemText), ...(m.notes || []).map(problemText), ...sitePoints,
+  const problems = [...otherProblems(m).map(problemText), ...(m.notes || []).map(problemText), ...sitePoints,
     ...((m.orphanSheets || []).map((o) => `Sheet "${o.name || o}" is in the workbook but matches no site, so it was ignored.`))];
 
   const setAll = (on) => {
@@ -155,7 +170,15 @@ function readPanel(st) {
 
   return el('section', { class: 'panel' }, [
     el('h2', {}, [el('span', { class: 'n', text: '2' }), 'Check what was read, then choose sites']),
-    el('p', { class: 'small muted', text: `${st.workbookName}: ${m.sites.length} site${m.sites.length === 1 ? '' : 's'} in the register, ${withData} with weekly status.` }),
+    el('p', { class: 'small muted', text: summaryText }),
+    unregistered.length ? el('div', { class: 'notice notice--bad', role: 'alert', id: 'unregistered-notice' }, [
+      el('strong', { text: `${unregistered.length} tab${unregistered.length === 1 ? '' : 's'} in the workbook ${unregistered.length === 1 ? 'was' : 'were'} NOT read: ${unregistered.map((u) => u.name).join(', ')}. ` }),
+      'Each holds tasks, but no row in the Sites sheet lists it, and only sites in the Sites sheet are analysed. To include one, add a row for it in the Sites sheet (Site code = the tab name) and load the workbook again.',
+    ]) : null,
+    redWarnings.length ? el('div', { class: 'notice notice--bad', role: 'alert', id: 'wrong-site-notice' }, [
+      el('strong', { text: 'Figures may belong to the wrong site. ' }),
+      el('ul', { style: { margin: '4px 0 0 18px', padding: 0 } }, redWarnings.map((w) => el('li', { text: `${w.site}: ${w.text}` }))),
+    ]) : null,
     preview?.privacy.flagged ? el('div', { class: 'notice notice--warn', role: 'alert' }, [
       el('strong', { text: 'Possible personal or place names found in ' + preview.privacy.sites.join(', ') + '. ' }),
       'The workbook should use codes only. This check is a guess and only warns; look before you generate or send anything to an AI.',

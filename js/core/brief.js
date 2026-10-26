@@ -13,6 +13,9 @@ import { STATUS } from './parser.js';
 import { analyseSite, compareSites, lastReportedWeek, statusAt } from './engine.js';
 import { computeSiteReport, RED, AMBER, GREEN } from './report.js';
 
+/** A site whose latest status is older than this (days before the run) gets a stale-data warning. */
+export const STALE_DAYS = 14;
+
 /** Pace bands for the overall status word. Same cut-offs as the full app's SPI proxy. */
 export const PACE_BANDS = { good: 0.95, decent: 0.85 };
 
@@ -142,6 +145,22 @@ function siteBrief(site, template, { previousModel, reportDate }) {
   const movement = movementFor(site, template, a, previousModel);
   if (movement) movement.text = movementSentence(movement);
 
+  // Problems with the SOURCE DATA that change how far the figures can be trusted.
+  // Worded for a reader who did not build the workbook.
+  const warnings = [];
+  for (const f of rep.quality.findings) {
+    if (f.id === 'Q-HDR') warnings.push({ id: 'Q-HDR', severity: 'RED', text: `${f.evidence} ${f.impact} ${f.correction}` });
+  }
+  if (!site.start) warnings.push({ id: 'NO-START', severity: 'AMBER', text: 'No start date in the register, so time used and pace cannot be measured for this site.' });
+  if (!site.target) warnings.push({ id: 'NO-TARGET', severity: 'AMBER', text: 'No target submission date in the register, so the forecast cannot be compared with a target.' });
+  for (const c of site.detail.ignoredColumns || []) {
+    warnings.push({ id: 'COLUMN', severity: 'AMBER', text: `The column "${c.label}"${c.end ? ` (${c.end})` : ''} was treated as a milestone, not a week, and left out.` });
+  }
+  const age = m.statusDate ? Math.round((new Date(`${reportDate}T00:00:00`) - new Date(`${m.statusDate}T00:00:00`)) / 86400000) : null;
+  if (!rep.submitted && age != null && age > STALE_DAYS) {
+    warnings.push({ id: 'STALE', severity: 'AMBER', text: `The latest status is for ${a.reportingWeek?.label || 'the last week'} (${m.statusDate}), ${age} days before this run.` });
+  }
+
   return {
     ...base,
     noData: false,
@@ -190,6 +209,7 @@ function siteBrief(site, template, { previousModel, reportDate }) {
       rows: rep.resources.rows.map((r) => ({ resource: r.resource, open: r.open, wip: r.wip, stuck: r.stuck })),
     },
     movement,
+    warnings,
     // Where the privacy scan found something — never the text itself.
     privacy: { flagged: !!rep.quality.privacy, locations: rep.quality.privacyLocations || [] },
     dataFindings: rep.quality.findings.length,
@@ -219,7 +239,16 @@ export function overallPace(sites) {
   const measurable = withData.filter((s) => !s.submitted && s.timeElapsed > 0 && s.totalWeight > 0);
   const expected = measurable.reduce((t, s) => t + s.totalWeight * (s.timeElapsed / 100), 0);
   const done = measurable.reduce((t, s) => t + s.doneWeight, 0);
-  const skipped = sites.length - measurable.length;
+  const why = (s) => {
+    if (s.noData) return 'no weekly status';
+    if (s.submitted) return 'already submitted';
+    const ids = (s.warnings || []).map((w) => w.id);
+    if (ids.includes('NO-START') || ids.includes('NO-TARGET') || s.timeElapsed == null) return 'no start or target date in the register';
+    if (!(s.timeElapsed > 0)) return 'not started yet';
+    return 'nothing to weigh';
+  };
+  const excluded = sites.filter((s) => !measurable.includes(s)).map((s) => ({ code: s.code, reason: why(s) }));
+  const skipped = excluded.length;
 
   let word, rag, ratio = null;
   if (!measurable.length) {
@@ -238,9 +267,13 @@ export function overallPace(sites) {
     ? (word === 'Complete' ? 'Every tracked site has been submitted.' : 'No site has both dates and weekly status, so pace cannot be measured.')
     : `Finished weight is ${r2(ratio)} of what straight-line progress to each target date would expect by now `
       + `(Good at ${PACE_BANDS.good} or above, Decent at ${PACE_BANDS.decent} to just under ${PACE_BANDS.good}, Poor below ${PACE_BANDS.decent}).`
-      + (skipped ? ` ${skipped} site${skipped === 1 ? ' is' : 's are'} not included (submitted, or not measurable).` : '');
+      + ` It rests on ${measurable.length} of ${sites.length} site${sites.length === 1 ? '' : 's'}.`
+      + (skipped ? ` Left out: ${excluded.map((e) => `${e.code} (${e.reason})`).join(', ')}.` : '');
 
-  return { word, rag, ratio: r2(ratio), doneWeight: r1(done), expectedWeight: r1(expected), measurableSites: measurable.length, basis };
+  return {
+    word, rag, ratio: r2(ratio), doneWeight: r1(done), expectedWeight: r1(expected),
+    measurableSites: measurable.length, sitesCounted: measurable.length, sitesTotal: sites.length, excluded, basis,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -303,6 +336,8 @@ export function buildBrief(model, opts = {}) {
         code: s.code, pctByWeight: s.pctByWeight, timeElapsed: s.timeElapsed, rag: s.overall, submitted: s.submitted,
       })),
     },
+    dataWarnings: sites.flatMap((s) => (s.warnings || []).map((w) => ({ site: s.code, ...w })))
+      .sort((x, y) => (x.severity === y.severity ? 0 : x.severity === 'RED' ? -1 : 1)),
     previousSource: opts.previousModel ? 'uploaded' : 'same-workbook',
     privacy: { flagged: flagged.length > 0, sites: flagged },
     warnings,

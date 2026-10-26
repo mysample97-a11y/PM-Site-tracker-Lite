@@ -89,3 +89,34 @@ export function fixtureWorkbook(XLSX, STATUS) {
   return wb;
 }
 
+
+/**
+ * The fixture plus the real-world problems found in a user's workbook:
+ *   F-03  register row with NO dates; its tab is a copy of F-01 whose header still
+ *         says F-01 (copied tab); its last week column is headed "Submission".
+ *   F-09  a tab with tasks that NO register row lists (never analysed).
+ * F-02 stays a register row with no tab.
+ */
+export function variantWorkbook(XLSX, STATUS) {
+  const wb = fixtureWorkbook(XLSX, STATUS);
+  const clone = (ws) => JSON.parse(JSON.stringify(ws));
+  const sites = wb.Sheets.Sites;
+  sites.A4 = { v: 'F-03', t: 's' }; sites.B4 = { v: 'Type B', t: 's' }; sites.C4 = { v: 'Wave 1', t: 's' };
+  sites.F4 = { v: 'In progress', t: 's' }; sites.G4 = { v: 'R1', t: 's' };
+  sites['!ref'] = 'A1:H4';
+
+  const base = wb.Sheets['F-01'];
+  const f03 = clone(base);
+  f03.A1 = { v: 'SITE F-01', t: 's' }; f03.A3 = { v: 'F-01', t: 's' };
+  f03.N6 = { v: 'Submission', t: 's' };                       // last week column (W06) relabelled
+  const states = new Set(['Finished', 'WIP', 'Blocked', 'Waiting on', 'Not started']);
+  for (let r = 8; r <= 29; r++) {
+    const c = f03[`N${r}`];
+    if (c && c.t === 's' && states.has(c.v)) c.v = 'Not started';
+  }
+  const f09 = clone(base);
+  f09.A1 = { v: 'SITE F-09', t: 's' }; f09.A3 = { v: 'F-09', t: 's' };
+  XLSX.utils.book_append_sheet(wb, f03, 'F-03');
+  XLSX.utils.book_append_sheet(wb, f09, 'F-09');
+  return wb;
+}

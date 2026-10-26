@@ -22,7 +22,7 @@ body{font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;colo
 .btn--ghost:hover{background:rgba(255,255,255,.12)}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
 .drops{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
-.drop{border:2px dashed #B5ACE9;border-radius:6px;padding:14px;background:#FAF9FE;text-align:center;cursor:pointer;position:relative}
+.drop{display:block;border:2px dashed #B5ACE9;border-radius:6px;padding:14px;background:#FAF9FE;text-align:center;cursor:pointer;position:relative}
 .drop.is-over{background:#EDEBFD;border-color:var(--accent)}
 .drop strong{display:block;color:var(--brand)}
 .drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}

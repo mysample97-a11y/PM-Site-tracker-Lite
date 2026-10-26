@@ -16,6 +16,7 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 global.window = { XLSX: createRequire(import.meta.url)(path.join(root, 'assets/vendor/xlsx.full.min.js')) };
 const { readWorkbook, parseWorkbook } = await import('../js/core/parser.js');
 const { buildBrief, engineSummary } = await import('../js/core/brief.js');
+const { dropMilestoneColumns, unregisteredSheets } = await import('../js/core/normalise.js');
 
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
@@ -27,9 +28,9 @@ if (!file) {
 
 async function load(p) {
   const b = fs.readFileSync(p);
-  return parseWorkbook(await readWorkbook({
+  return dropMilestoneColumns(parseWorkbook(await readWorkbook({
     name: path.basename(p), arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength),
-  }));
+  })));
 }
 
 const model = await load(file);
@@ -55,6 +56,11 @@ console.log(`Overall: ${p.pace.word.toUpperCase()}${p.pace.ratio != null ? ` (pa
 console.log(p.pace.basis);
 if (b.privacy.flagged) console.log(`\n!! PRIVACY: possible personal or place names found in: ${b.privacy.sites.join(', ')}. Check the workbook before sending anything to an AI.`);
 for (const w of b.warnings) console.log('!! ' + w);
+const unreg = unregisteredSheets(model);
+if (unreg.length) console.log(`!! NOT READ: ${unreg.map((u) => u.name).join(', ')} hold tasks but no row in the Sites sheet lists them.`);
+for (const w of b.dataWarnings) console.log(`!! ${w.severity === 'RED' ? '[WRONG SITE?] ' : ''}${w.site}: ${w.text}`);
+const pc = b.portfolio.pace;
+if (pc.excluded.length) console.log(`   Pace counts ${pc.sitesCounted} of ${pc.sitesTotal} sites. Not counted: ${pc.excluded.map((e) => `${e.code} (${e.reason})`).join(', ')}.`);
 
 console.log('\nSITES\n' + line());
 console.log(pad('Site', 8) + pad('Status', 7) + pad('Groups', 8) + pad('Done', 5, 1) + pad('WIP', 5, 1) + pad('Blk', 5, 1) + pad('Wait', 5, 1) + pad('NotSt', 6, 1) + pad('%', 6, 1) + '  Forecast vs target');

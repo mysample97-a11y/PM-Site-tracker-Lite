@@ -73,6 +73,9 @@ export const BRIEF_CSS = `
 .bf-act{color:#4A4570}
 .bf-issues{font-size:10.5px;color:#C2740A;margin-top:4px}
 .bf-foot{margin-top:8px;font-size:10px;color:#7C769D;border-top:1px solid #D9D4F3;padding-top:4px}
+.bf-attn{border:1px solid #DC2626;border-left:5px solid #DC2626;background:#FDF0F0;padding:6px 10px;margin:6px 0;border-radius:3px;font-size:11.5px;break-inside:avoid}
+.bf-attn.amber{border-color:#C2740A;background:#FCF2DF}
+.bf-attn ul{margin:3px 0 0 16px;padding:0}.bf-attn li{margin:1px 0}
 .bf-warn{background:#FCF2DF;border:1px solid #C2740A;color:#7A4A06;padding:6px 8px;border-radius:3px;margin:6px 0;font-size:11.5px}
 `;
 
@@ -214,6 +217,21 @@ function conclusionBlock(brief, conclusion, engineLines) {
     + '<div class="bf-note"><i>Written by an AI from the figures above. The figures are calculated; this reading of them is a judgement and should be checked by a person.</i></div></div>';
 }
 
+/** Problems with the source data, so nobody relies on a figure that may belong to another site. */
+function attentionBlock(brief) {
+  const w = brief.dataWarnings || [];
+  if (!w.length) return '';
+  const bySite = new Map();
+  for (const x of w) {
+    if (!bySite.has(x.site)) bySite.set(x.site, []);
+    bySite.get(x.site).push(x);
+  }
+  const items = [...bySite.entries()].map(([site, list]) =>
+    `<li><b>${esc(site)}</b> — ${list.map((x) => `${x.severity === 'RED' ? '■ ' : ''}${esc(x.text)}`).join(' ')}</li>`).join('');
+  const red = w.some((x) => x.severity === 'RED');
+  return `<div class="bf-attn${red ? '' : ' amber'}"><b>Check before relying on this brief</b>${red ? ' — a ■ item means a figure may belong to the wrong site' : ''}<ul>${items}</ul></div>`;
+}
+
 /**
  * @param {object} brief        buildBrief() result
  * @param {object|null} conclusion  { result, meta } or null
@@ -232,9 +250,10 @@ export function renderBriefHTML(brief, conclusion, { engineLines = [], screen = 
   return `<div class="bf">
 <div class="bf-head"><h1>Site progress brief</h1>
 <div class="bf-meta">Run ${esc(fmtRun(brief.title.runAt))} · Workbook: ${esc(brief.title.workbook || '—')} · Sites tracked (${brief.title.siteCount}): <b>${esc(brief.title.sites.join(', '))}</b></div></div>
-${warn}${warnings}
+${warn}${warnings}${attentionBlock(brief)}
 <div class="bf-overall"><div><span class="bf-paceword bf-pace-${paceCls}">Overall: ${esc(p.word)}</span>
-<div class="bf-note">${p.ratio != null ? `Pace ${esc(p.ratio)} of plan · ` : ''}${esc(num(brief.portfolio.overallPctByWeight))}% of work complete across ${brief.portfolio.sitesWithData} site${brief.portfolio.sitesWithData === 1 ? '' : 's'}</div>
+<div class="bf-note">${p.ratio != null ? `Pace ${esc(p.ratio)} of plan, counting ${p.sitesCounted} of ${p.sitesTotal} site${p.sitesTotal === 1 ? '' : 's'} · ` : ''}${esc(num(brief.portfolio.overallPctByWeight))}% of work complete across ${brief.portfolio.sitesWithData} site${brief.portfolio.sitesWithData === 1 ? '' : 's'} with data</div>
+${p.excluded?.length ? `<div class="bf-note">Not counted in pace: ${p.excluded.map((e) => `${esc(e.code)} (${esc(e.reason)})`).join(', ')}</div>` : ''}
 <div class="bf-note">${t.groupsComplete} of ${t.groupsTotal} task groups finished · ${t.finished} of ${t.tasks} tasks done · ${t.wip} WIP · ${t.blocked + t.waiting} blocked or waiting</div></div>
 <div class="bf-chart">${chartSVG(brief)}</div></div>
 <h2>Sites at a glance</h2>${sitesTable(brief)}

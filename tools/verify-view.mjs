@@ -15,7 +15,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fixtureWorkbook } from './fixture.mjs';
+import { fixtureWorkbook, variantWorkbook } from './fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const XLSX = createRequire(import.meta.url)(path.join(root, 'assets/vendor/xlsx.full.min.js'));
@@ -34,6 +34,7 @@ const { readWorkbook, parseWorkbook, STATUS } = await import('../js/core/parser.
 const { buildBrief, engineSummary } = await import('../js/core/brief.js');
 const V = await import('../js/core/briefview.js');
 const X = await import('../js/core/exports.js');
+const { dropMilestoneColumns } = await import('../js/core/normalise.js');
 const S = await import('../js/core/session.js');
 const T = await import('../js/core/tokens.js');
 
@@ -151,7 +152,7 @@ const CONCL = {
   const wb = X.buildBriefWorkbook(brief, CONCL, lines, XLSX);
   const back = XLSX.read(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }), { type: 'array' });
   const aoa = (n) => XLSX.utils.sheet_to_json(back.Sheets[n], { header: 1, defval: '' });
-  check('five sheets', back.SheetNames.join('|') === 'Brief|Task groups|Prerequisites|Blocked and waiting|Conclusion', back.SheetNames.join('|'));
+  check('six sheets', back.SheetNames.join('|') === 'Brief|Data warnings|Task groups|Prerequisites|Blocked and waiting|Conclusion', back.SheetNames.join('|'));
   const brf = aoa('Brief');
   const siteRow = brf.find((r) => r[0] === 'F-01' && r[1] === 'RED');
   check('Brief sheet: site row with counts', !!siteRow && siteRow[3] === 4 && siteRow[4] === 2 && siteRow[5] === 1 && siteRow[6] === 1 && siteRow[7] === 2 && siteRow[8] === 45.5, JSON.stringify(siteRow));
@@ -277,6 +278,61 @@ const CONCL = {
   check('no site data is left in browser storage', !/F-01|F-02|fixture|Modelling|Ceiling/.test(stored), stored.slice(0, 200));
   S.reset();
   check('reset clears the in-memory state', S.get().model === null && S.get().brief === null && S.get().conclusion === null);
+}
+
+
+/* ------------- 8. data warnings, pace basis, and not trusting them with markup ------------- */
+{
+  const buf = XLSX.write(variantWorkbook(XLSX, STATUS), { type: 'array', bookType: 'xlsx' });
+  const vm = dropMilestoneColumns(parseWorkbook(await readWorkbook({ name: 'variant.xlsx', arrayBuffer: async () => buf })));
+  const vb = buildBrief(vm, { codes: ['F-01', 'F-03'], now: NOW, workbookName: 'variant.xlsx' });
+  const html = V.renderBriefHTML(vb, null, { engineLines: engineSummary(vb) });
+
+  check('a "check before relying" box appears when the data has problems', html.includes('Check before relying on this brief'));
+  check('a wrong-site problem is marked, and explained', html.includes('■ Sheet header code = F-01; register row = F-03') && html.includes('may belong to the wrong site'));
+  check('the box names the site', /<li><b>F-03<\/b>/.test(html));
+  check('the box is red when a figure may be on the wrong site', /class="bf-attn">/.test(html));
+  const amberOnly = JSON.parse(JSON.stringify(vb));
+  amberOnly.dataWarnings = amberOnly.dataWarnings.filter((w) => w.severity !== 'RED');
+  const ah = V.renderBriefHTML(amberOnly, null, { engineLines: [] });
+  check('with only lesser problems the box is amber and makes no wrong-site claim', ah.includes('bf-attn amber') && !ah.includes('may belong to the wrong site'));
+  const cleanBrief = buildBrief(model, { codes: ['F-01'], now: NOW });
+  check('a clean brief has no such box', !V.renderBriefHTML(cleanBrief, null, { engineLines: [] }).includes('class="bf-attn'));
+  check('the printed document carries the box too', V.buildPrintHTML(vb, null, { engineLines: [] }).includes('Check before relying on this brief'));
+
+  check('the overall line says how many sites pace rests on', html.includes('counting 1 of 2 sites'), html.match(/Pace[^<]*/)?.[0]);
+  check('and which sites were left out, and why', html.includes('Not counted in pace: F-03 (no start or target date in the register)'));
+  check('the overall note does not claim a verdict on every site', !/counting 2 of 2/.test(html));
+  check('a brief where every site counts shows no "not counted" line', !V.renderBriefHTML(cleanBrief, null, { engineLines: [] }).includes('Not counted in pace'));
+
+  // Excel
+  const wb = X.buildBriefWorkbook(vb, null, [], XLSX);
+  const back = XLSX.read(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }), { type: 'array' });
+  const aoa = (n) => XLSX.utils.sheet_to_json(back.Sheets[n], { header: 1, defval: '' });
+  const dw = aoa('Data warnings');
+  check('Excel has a Data warnings sheet listing each problem with its site', dw.some((r) => r[0] === 'F-03' && /wrong site/.test(r[1]) && /Sheet header code = F-01/.test(r[2])) && dw.some((r) => r[0] === 'F-03' && /left out/.test(r[2])), JSON.stringify(dw.slice(0, 3)));
+  check('Excel says "None found" when the data is clean', JSON.stringify(XLSX.utils.sheet_to_json(XLSX.read(XLSX.write(X.buildBriefWorkbook(cleanBrief, null, [], XLSX), { type: 'array', bookType: 'xlsx' }), { type: 'array' }).Sheets['Data warnings'], { header: 1 })).includes('None found'));
+  check('Excel Brief sheet states what pace counts', aoa('Brief').some((r) => r[0] === 'Pace counts' && /1 of 2 sites; not counted: F-03/.test(r[1])), JSON.stringify(aoa('Brief').slice(4, 7)));
+
+  // Word
+  const rtf = X.buildBriefRTF(vb, null, []);
+  check('Word carries the warnings and the pace basis', rtf.includes('Check before relying on this brief') && rtf.includes('[Check: may be the wrong site]') && rtf.includes('Pace counts 1 of 2 sites'));
+  check('Word stays balanced with them', (rtf.match(/(?<!\\)\{/g) || []).length === (rtf.match(/(?<!\\)\}/g) || []).length);
+
+  // Markup in the new fields
+  const EVIL = '<img src=x onerror=alert(1)>';
+  const evil = JSON.parse(JSON.stringify(vb));
+  evil.dataWarnings[0].text = EVIL; evil.dataWarnings[0].site = EVIL;
+  evil.portfolio.pace.excluded[0].code = EVIL; evil.portfolio.pace.excluded[0].reason = EVIL;
+  const eh = V.renderBriefHTML(evil, null, { engineLines: [] });
+  check('warning text, site and pace reasons are escaped', !/<img/i.test(eh) && eh.includes('&lt;img src=x onerror=alert(1)&gt;'));
+  check('and in the printable document', !/<img/i.test(V.buildPrintHTML(evil, null, { engineLines: [] })));
+
+  // A session round trip keeps the milestone-column fix, so a reloaded page is identical
+  const st = { workbookName: 'variant.xlsx', model: vm, previousName: null, previousModel: null, selection: ['F-01', 'F-03'], runAt: NOW.toISOString(), brief: vb, conclusion: null };
+  const back2 = S.parseSessionFile(JSON.stringify(S.buildSessionFile(st))).state;
+  const re = buildBrief(back2.model, { codes: back2.selection, now: new Date(back2.runAt), workbookName: back2.workbookName });
+  check('a reloaded session keeps the ignored column and the warnings', V.renderBriefHTML(vb, null, { engineLines: engineSummary(vb) }) === V.renderBriefHTML(re, null, { engineLines: engineSummary(re) }));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

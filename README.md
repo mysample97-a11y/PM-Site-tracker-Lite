@@ -21,6 +21,20 @@ The workbook is read in the browser and never uploaded. The only network call is
 
 **Reloading the page or closing the tab clears everything.** The only way to keep your work is *Save session*, which writes a file holding the selected sites only and never the API key.
 
+## What the app tells you about your workbook
+
+Before you generate anything, the *Check what was read* step says, in plain words:
+
+- which tabs were **not read** because no row in the **Sites** sheet lists them (only sites in the register are analysed);
+- which register sites have **no detail tab** or no weekly status;
+- which sites have a tab whose **header names a different site** (a copied tab that was not updated), marked as possibly the wrong site;
+- missing start or target dates in the register, and status that is more than two weeks old;
+- columns that were **left out of the weekly status** because their heading is a milestone (for example "Submission"), not a week.
+
+The same warnings appear on the brief, in the Word and Excel exports, and are passed to the AI. The overall status says how many sites it rests on and which were left out, and why.
+
+*Difference from the full tracker:* the full app's parser reads any dated column as a week, so a "Submission 01-Jan" column becomes a fake final week. Lite leaves such columns out (`js/core/normalise.js`) and says so.
+
 ## Privacy and security
 
 - Use **codes only** in the workbook (site `A-01`, person `R1`). The app flags likely names, but the check is a guess and only warns.
@@ -59,7 +73,8 @@ jsdom has no layout engine: these tests prove behaviour, not appearance. Check t
 index.html  assets/css/lite.css  assets/vendor/   page, styles, SheetJS (Apache-2.0, vendored)
 js/views/app.js                                   the page
 js/core/parser.js engine.js report.js util.js     reused unchanged from the full tracker
-js/core/brief.js                                  the one-page figures
+js/core/brief.js                                  the one-page figures and data warnings
+js/core/normalise.js                              Lite-only tidy-ups of the parsed workbook (milestone columns, unlisted tabs)
 js/core/briefview.js                              draws the brief (screen and print)
 js/core/ai.js tokens.js                           Gemini client, retry, usage meter
 js/core/session.js                                state, settings, key, session file

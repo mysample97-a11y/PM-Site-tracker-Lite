@@ -14,7 +14,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fixtureWorkbook } from './fixture.mjs';
+import { fixtureWorkbook, variantWorkbook } from './fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const XLSX = createRequire(import.meta.url)(path.join(root, 'assets/vendor/xlsx.full.min.js'));
@@ -234,6 +234,23 @@ const reset = () => { AI.clearOverloadMemory(); AI._setOverloadWaits([1, 1, 1, 1
   stub(() => res(200, okBody('this is not json at all')));
   try { await AI.run({ payload: {}, settings: SETTINGS }); } catch (e) { e1 = e; }
   check('a reply that is not JSON is reported', /valid JSON/.test(e1?.message));
+}
+
+
+/* ----------------- 4. the model is told about weak data ----------------- */
+{
+  const { dropMilestoneColumns } = await import('../js/core/normalise.js');
+  const vbuf = XLSX.write(variantWorkbook(XLSX, STATUS), { type: 'array', bookType: 'xlsx' });
+  const vm = dropMilestoneColumns(parseWorkbook(await readWorkbook({ name: 'v.xlsx', arrayBuffer: async () => vbuf })));
+  const vb = buildBrief(vm, { codes: ['F-01', 'F-03'], now: NOW });
+  const p = AI.buildConclusionPayload(vb);
+  const s3 = p.sites.find((s) => s.site === 'F-03');
+  check('a site with source-data problems carries them to the model', Array.isArray(s3.dataWarnings) && s3.dataWarnings.some((w) => /Sheet header code = F-01; register row = F-03/.test(w)), JSON.stringify(s3.dataWarnings));
+  check('a clean site carries none', p.sites.find((s) => s.site === 'F-01').dataWarnings === undefined);
+  check('the model is told pace rests on fewer sites than listed', p.overall.paceCountsSites === '1 of 2' && p.overall.notCountedInPace[0].code === 'F-03', JSON.stringify(p.overall));
+  const sys = AI.previewPayload({ payload: p, settings: SETTINGS }).system;
+  check('the system prompt tells it not to hide data warnings', /dataWarnings/.test(sys) && /never hide them/.test(sys));
+  check('and not to present pace as a verdict on every site', /paceCountsSites/.test(sys) && /Do not present it as a verdict on all/.test(sys));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

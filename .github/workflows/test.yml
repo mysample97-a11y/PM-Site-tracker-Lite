@@ -45,7 +45,7 @@ jobs:
             "templates/BIM-Multi-Site-Tracker-TEMPLATE.xlsx" \
             "js/views/app.js" \
             "js/core/parser.js" "js/core/engine.js" "js/core/report.js" "js/core/util.js" \
-            "js/core/brief.js" "js/core/briefview.js" "js/core/ai.js" "js/core/tokens.js" \
+            "js/core/brief.js" "js/core/briefview.js" "js/core/normalise.js" "js/core/ai.js" "js/core/tokens.js" \
             "js/core/session.js" "js/core/exports.js" \
             "tools/fixture.mjs" "package-lock.json"
           do

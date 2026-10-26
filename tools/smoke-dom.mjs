@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { fixtureWorkbook } from './fixture.mjs';
+import { fixtureWorkbook, variantWorkbook } from './fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const XLSX = createRequire(import.meta.url)(path.join(root, 'assets/vendor/xlsx.full.min.js'));
@@ -144,6 +144,18 @@ check('two separate upload zones', document.querySelectorAll('input[type=file]')
 check('main upload is labelled required, previous optional', /Tracker workbook \(required\)/.test(bodyText()) && /Previous week.s workbook \(optional\)/.test(bodyText()));
 check('Save session is off until there is a brief', btn('Save session').disabled === true);
 check('Start over is off until a workbook is loaded', btn('Start over').disabled === true);
+
+/* ============================ layout (the upload boxes) ============================ */
+// jsdom does not load linked stylesheets, so put the real one in the page and ask for computed styles.
+{
+  const style = document.createElement('style');
+  style.textContent = fs.readFileSync(path.join(root, 'assets/css/lite.css'), 'utf8');
+  document.head.appendChild(style);
+  const zones = [...document.querySelectorAll('label.drop')];
+  check('both upload boxes are block-level, so title, hint and border stay together', zones.length === 2 && zones.every((z) => window.getComputedStyle(z).display === 'block'),
+    zones.map((z) => window.getComputedStyle(z).display).join());
+  check('the optional box sits in the same grid as the required one', zones.length === 2 && zones[0].closest('.drops') === zones[1].closest('.drops'));
+}
 
 /* ================================ load ================================ */
 const [mainInput, prevInput] = document.querySelectorAll('input[type=file]');
@@ -346,6 +358,33 @@ click(btn('Load session', conf2));
 await tick(120);
 check('a file that is not a session is refused, with a reason', /not a bim-tracker-lite\.session/.test(bodyText()));
 check('and the current page is untouched', !!$('#brief-page'));
+
+/* ================== problems found in a real workbook ================== */
+const variantBuf = XLSX.write(variantWorkbook(XLSX, (await import('../js/core/parser.js')).STATUS), { type: 'array', bookType: 'xlsx' });
+click(btn('Start over'));
+const conf3 = await waitFor(() => { const d = openDialog(); return d && /Start over\?/.test(d.textContent) ? d : null; });
+click(btn('Start over', conf3));
+await waitFor(() => !document.querySelector('table.t'));
+setFile(document.querySelectorAll('input[type=file]')[0], { name: 'variant.xlsx', arrayBuffer: async () => variantBuf });
+await waitFor(() => $('#unregistered-notice'));
+const un = $('#unregistered-notice');
+check('a tab the register does not list is called out, by name, as NOT read', !!un && /NOT read: F-09/.test(un.textContent), un?.textContent);
+check('and the fix is stated in plain words', /add a row for it in the Sites sheet/.test(un?.textContent || ''));
+const wrong = $('#wrong-site-notice');
+check('a copied tab is called out as possibly the wrong site', !!wrong && /may belong to the wrong site/.test(wrong.textContent) && /F-03: Sheet header code = F-01; register row = F-03/.test(wrong.textContent), wrong?.textContent);
+const rowF03 = [...document.querySelectorAll('table.t tbody tr')].find((r) => /F-03/.test(r.textContent));
+check('the site row carries the checks', !!rowF03 && /Sheet header disagrees/.test(rowF03.textContent) && /Register date missing/.test(rowF03.textContent) && /Column left out/.test(rowF03.textContent), rowF03?.textContent);
+check('the summary counts listed sites without a tab', /3 sites in the register, 2 with weekly status/.test(bodyText()) && /1 listed with no detail tab \(F-02\)/.test(bodyText()), bodyText().match(/variant\.xlsx:[^.]*\.[^.]*\./)?.[0]);
+check('the milestone column is explained among the things to look at', /looks like a milestone, not a week/.test(bodyText()));
+check('sites with data are ticked, the unlisted tab is not a site', [...document.querySelectorAll('table.t tbody tr')].length === 3 && !/F-09/.test(document.querySelector('table.t').textContent));
+click(btn('Generate brief'));
+await waitFor(() => $('#brief-page'));
+const vp = $('#brief-page');
+check('the brief shows the "check before relying" box', !!vp.querySelector('.bf-attn') && /Check before relying on this brief/.test(vp.textContent));
+check('the brief names the wrong-site risk on the page', /Sheet header code = F-01; register row = F-03/.test(vp.textContent));
+check('pace says it rests on 1 of 2 sites and who was left out', /counting 1 of 2 sites/.test(vp.textContent) && /Not counted in pace: F-03/.test(vp.textContent), vp.textContent.match(/Pace[^·]*/)?.[0]);
+check('F-03 reads its real last week, not the milestone column', /W05/.test(vp.textContent) && !/Submission · /.test(vp.textContent));
+check('a tab with no register row does not appear in the brief', !/F-09/.test(vp.textContent));
 
 /* ======================= nothing about a site is persisted ======================= */
 const stored = JSON.stringify({ ...window.localStorage }) + JSON.stringify({ ...window.sessionStorage });

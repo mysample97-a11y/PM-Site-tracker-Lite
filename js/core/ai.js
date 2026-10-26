@@ -44,6 +44,8 @@ Everything you are given was calculated by software from the project's tracker w
 - Mention ONLY the sites listed in the data. Never refer to, compare with or speculate about any other site.
 - Resources appear as codes such as R1. Use the codes as given.
 - If the data is too thin to judge a site, say "Cannot tell" and say what is missing.
+- A site may carry "dataWarnings": problems found in its source data (a sheet that may belong to another site, missing dates, stale status). Say so where they affect your reading; never hide them or reason as if the figures were certain.
+- The overall pace may rest on fewer sites than are listed (see paceCountsSites and notCountedInPace). Do not present it as a verdict on all of them.
 - Plain, short sentences. No jargon without a word of explanation.
 
 Your job is the conclusion only: will each site finish on time, and is a change of strategy or a move of resources needed, and where.`;
@@ -89,6 +91,7 @@ export function buildConclusionPayload(brief) {
       })),
       resourceLoad: s.resources.rows.slice(0, CAP.resources),
       sinceLastWeek: s.movement?.text || null,
+      dataWarnings: (s.warnings || []).length ? s.warnings.map((w) => w.text) : undefined,
     };
   });
   return {
@@ -98,6 +101,8 @@ export function buildConclusionPayload(brief) {
       pace: brief.portfolio.pace.word,
       paceRatio: brief.portfolio.pace.ratio,
       percentCompleteAllSites: brief.portfolio.overallPctByWeight,
+      paceCountsSites: `${brief.portfolio.pace.sitesCounted} of ${brief.portfolio.pace.sitesTotal}`,
+      notCountedInPace: brief.portfolio.pace.excluded.length ? brief.portfolio.pace.excluded : undefined,
     },
     sites,
   };

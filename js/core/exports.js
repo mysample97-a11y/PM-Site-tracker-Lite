@@ -81,8 +81,12 @@ const titleRows = (brief) => [
   ['Workbook', nv(brief.title.workbook)],
   [`Sites tracked (${brief.title.siteCount})`, brief.title.sites.join(', ')],
   ['Overall', `${brief.portfolio.pace.word}${brief.portfolio.pace.ratio != null ? ` (pace ${brief.portfolio.pace.ratio} of plan)` : ''}`],
+  ['Pace counts', `${brief.portfolio.pace.sitesCounted} of ${brief.portfolio.pace.sitesTotal} sites${brief.portfolio.pace.excluded.length ? `; not counted: ${brief.portfolio.pace.excluded.map((e) => `${e.code} (${e.reason})`).join(', ')}` : ''}`],
   ['Work complete across sites', `${nv(brief.portfolio.overallPctByWeight)}%`],
 ];
+
+const warningRows = (brief) => (brief.dataWarnings || []).map((w) => [w.site, w.severity === 'RED' ? 'Check: may be the wrong site' : 'Check', w.text]);
+const WARN_HEAD = ['Site', 'Severity', 'Warning about the source data'];
 
 /* ================================ Excel ================================ */
 
@@ -95,6 +99,7 @@ export function buildBriefWorkbook(brief, conclusion, engineLines = [], XLSX = w
   };
   add('Brief', [...titleRows(brief), [], SITES_HEAD, ...sitesRows(brief), [], ['Progress by site'], PROGRESS_HEAD, ...progressRows(brief)],
     [26, 16, 18, 8, 8, 9, 11, 11, 9, 52, 16]);
+  add('Data warnings', [WARN_HEAD, ...(warningRows(brief).length ? warningRows(brief) : [['', '', 'None found']])], [8, 28, 120]);
   add('Task groups', [GROUP_HEAD, ...groupRows(brief)], [8, 34, 8, 8, 9, 11, 12, 9, 14]);
   add('Prerequisites', [PREQ_HEAD, ...preqRows(brief)], [8, 8, 36, 12, 15, 34, 24]);
   add('Blocked and waiting', [BLOCKED_HEAD, ...blockedRows(brief)], [8, 10, 36, 24, 10, 8, 10, 46, 12]);
@@ -140,6 +145,13 @@ export function buildBriefRTF(brief, conclusion, engineLines = []) {
   body += p(`Overall: ${brief.portfolio.pace.word}${brief.portfolio.pace.ratio != null ? ` (pace ${brief.portfolio.pace.ratio} of plan)` : ''}. `
     + `${nv(brief.portfolio.overallPctByWeight)}% of work complete. ${t.groupsComplete} of ${t.groupsTotal} task groups finished; `
     + `${t.finished} of ${t.tasks} tasks done; ${t.wip} WIP; ${t.blocked + t.waiting} blocked or waiting.`, { b: true });
+  if (brief.portfolio.pace.excluded.length) {
+    body += p(`Pace counts ${brief.portfolio.pace.sitesCounted} of ${brief.portfolio.pace.sitesTotal} sites. Not counted: ${brief.portfolio.pace.excluded.map((e) => `${e.code} (${e.reason})`).join(', ')}.`, { i: true });
+  }
+  if (brief.dataWarnings?.length) {
+    body += h('Check before relying on this brief');
+    for (const w of brief.dataWarnings) body += p(`${w.severity === 'RED' ? '[Check: may be the wrong site] ' : ''}${w.site}: ${w.text}`);
+  }
   if (brief.privacy.flagged) body += p(`Check before sharing: possible personal or place names were found in ${brief.privacy.sites.join(', ')}.`, { i: true });
 
   body += h('Sites at a glance') + rtfTable(SITES_HEAD, sitesRows(brief), [1300, 900, 1300, 750, 750, 850, 950, 1000, 800, 3900, 1300]);

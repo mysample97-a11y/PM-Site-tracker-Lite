@@ -24,7 +24,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { fixtureWorkbook } from './fixture.mjs';
+import { fixtureWorkbook, variantWorkbook } from './fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(import.meta.url);
@@ -32,7 +32,8 @@ const XLSX = require(path.join(root, 'assets/vendor/xlsx.full.min.js'));
 global.window = { XLSX };
 
 const { readWorkbook, parseWorkbook, STATUS } = await import('../js/core/parser.js');
-const { buildBrief, overallPace, engineSummary, PACE_BANDS } = await import('../js/core/brief.js');
+const { buildBrief, overallPace, engineSummary, PACE_BANDS, STALE_DAYS } = await import('../js/core/brief.js');
+const { dropMilestoneColumns, unregisteredSheets, otherProblems } = await import('../js/core/normalise.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -137,7 +138,7 @@ const NOW = new Date(2026, 1, 16, 9, 30);   // Mon 16 Feb 2026, local
   check('expected weight 8.2, done 5', near(p.expectedWeight, 8.2, 0.05) && p.doneWeight === 5, JSON.stringify(p));
   check('pace is RED', p.rag === 'RED');
   check('only the measurable site counts', p.measurableSites === 1);
-  check('the basis says a site was left out', /1 site is not included/.test(p.basis), p.basis);
+  check('the basis says how many sites it rests on, and which were left out and why', /rests on 1 of 2 sites/.test(p.basis) && /Left out: F-02 \(no weekly status\)/.test(p.basis), p.basis);
   check('portfolio overall % by weight 45.5', b.portfolio.overallPctByWeight === 45.5);
   check('chart has one bar per site with data', b.portfolio.chart.length === 1 && b.portfolio.chart[0].code === 'F-01');
   check('site without a detail sheet is reported, not hidden',
@@ -275,6 +276,93 @@ const NOW = new Date(2026, 1, 16, 9, 30);   // Mon 16 Feb 2026, local
   check('template worked example: 16.4% -> 21.3% complete since last week',
     s0.movement?.comparable && s0.movement.pctThen === 16.4 && s0.movement.pctNow === 21.3, JSON.stringify(s0.movement));
   check('template worked example: 1 more task finished', s0.movement?.finishedChange === 1, String(s0.movement?.finishedChange));
+}
+
+
+/* -------- 10. problems found in a real workbook: milestone column, copied tab, no dates, orphan tab -------- */
+{
+  const loadVariant = async (normalise) => {
+    const buf = XLSX.write(variantWorkbook(XLSX, STATUS), { type: 'array', bookType: 'xlsx' });
+    const m = parseWorkbook(await readWorkbook({ name: 'variant.xlsx', arrayBuffer: async () => buf }));
+    return normalise ? dropMilestoneColumns(m) : m;
+  };
+
+  // The bug: a column headed "Submission" is read as a week.
+  const raw = await loadVariant(false);
+  const rawBrief = buildBrief(raw, { codes: ['F-03'], now: NOW });
+  check('WITHOUT the fix, a "Submission" column becomes a fake final week', rawBrief.sites[0].reportingWeek === 'Submission' && rawBrief.sites[0].counts.finished === 0,
+    JSON.stringify([rawBrief.sites[0].reportingWeek, rawBrief.sites[0].counts.finished]));
+
+  const model2 = await loadVariant(true);
+  const f03 = model2.sites.find((s) => s.code === 'F-03');
+  check('the milestone column is removed from the weekly grid', f03.detail.weeks.length === 5 && !f03.detail.weeks.some((w) => /submission/i.test(w.label)), f03.detail.weeks.map((w) => w.label).join());
+  check('every task and category row is cut to match', f03.detail.tasks.every((t) => t.weekly.length === 5) && f03.detail.categories.every((c) => c.weekly.length === 5));
+  check('weeks are renumbered and the site count follows', f03.detail.weeks.map((w) => w.number).join() === '1,2,3,4,5' && f03.weekCount === 5);
+  check('what was removed is recorded', f03.detail.ignoredColumns.length === 1 && f03.detail.ignoredColumns[0].label === 'Submission');
+  check('and said in plain words in the notes', model2.notes.some((n) => /F-03: the column "Submission"/.test(n) && /milestone/.test(n)), JSON.stringify(model2.notes));
+  const before = JSON.stringify(model2.notes);
+  dropMilestoneColumns(model2);
+  check('running it twice changes nothing', JSON.stringify(model2.notes) === before && f03.detail.weeks.length === 5);
+  check('a normal site is untouched', model2.sites.find((s) => s.code === 'F-01').detail.weeks.length === 6 && !model2.sites.find((s) => s.code === 'F-01').detail.ignoredColumns);
+
+  const b = buildBrief(model2, { codes: ['F-01', 'F-03'], now: NOW, workbookName: 'variant.xlsx' });
+  const s3 = b.sites.find((s) => s.code === 'F-03');
+  check('WITH the fix, F-03 reads its real last week', s3.reportingWeek === 'W05' && s3.counts.finished === 4 && s3.counts.wip === 2, JSON.stringify([s3.reportingWeek, s3.counts]));
+
+  // Warnings
+  const w3 = s3.warnings;
+  const hdr = w3.find((w) => w.id === 'Q-HDR');
+  check('a copied tab is flagged RED, naming both codes', hdr?.severity === 'RED' && /Sheet header code = F-01; register row = F-03/.test(hdr.text), hdr?.text);
+  check('the flag says what to do about it', /Set the sheet header code to F-03/.test(hdr?.text || ''));
+  check('missing register dates are flagged', w3.some((w) => w.id === 'NO-START') && w3.some((w) => w.id === 'NO-TARGET'));
+  check('the ignored column is flagged', w3.some((w) => w.id === 'COLUMN' && /"Submission"/.test(w.text) && /left out/.test(w.text)));
+  check('a clean site has no warnings', b.sites.find((s) => s.code === 'F-01').warnings.length === 0);
+  check('warnings are gathered on the brief, wrong-site ones first', b.dataWarnings.length >= 4 && b.dataWarnings[0].severity === 'RED' && b.dataWarnings[0].site === 'F-03');
+  check('every warning names its site', b.dataWarnings.every((w) => w.site === 'F-03'));
+  check('the warning text never repeats a task or place name', !JSON.stringify(b.dataWarnings).includes('Foundations'));
+
+  // Pace: how many sites it rests on, and why others are left out
+  const pace = b.portfolio.pace;
+  check('pace says it rests on 1 of 2 sites', pace.sitesCounted === 1 && pace.sitesTotal === 2, JSON.stringify([pace.sitesCounted, pace.sitesTotal]));
+  check('F-03 is left out for want of dates', pace.excluded.length === 1 && pace.excluded[0].code === 'F-03' && /no start or target date/.test(pace.excluded[0].reason), JSON.stringify(pace.excluded));
+  check('the basis names the site and the reason', /Left out: F-03 \(no start or target date in the register\)/.test(pace.basis), pace.basis);
+  const all = buildBrief(model2, { codes: ['F-01', 'F-02', 'F-03'], now: NOW });
+  check('a site with no tab is left out as "no weekly status"', all.portfolio.pace.excluded.some((e) => e.code === 'F-02' && e.reason === 'no weekly status'));
+  const subm = await loadVariant(true);
+  subm.sites.find((s) => s.code === 'F-01').actual = '2026-02-20';
+  const bs = buildBrief(subm, { codes: ['F-01', 'F-03'], now: NOW });
+  check('a submitted site is left out as "already submitted"', bs.portfolio.pace.excluded.some((e) => e.code === 'F-01' && e.reason === 'already submitted'));
+
+  // Stale status
+  const late = buildBrief(model2, { codes: ['F-01'], now: new Date(2026, 2, 20, 9, 0) });
+  const stale = late.sites[0].warnings.find((w) => w.id === 'STALE');
+  check('a status older than the limit is flagged, with its age', !!stale && /W06/.test(stale.text) && /33 days before this run/.test(stale.text), stale?.text);
+  check('the limit is two weeks', STALE_DAYS === 14);
+  check('a status inside the limit is not flagged', !buildBrief(model2, { codes: ['F-01'], now: new Date(2026, 1, 28) }).sites[0].warnings.some((w) => w.id === 'STALE'));
+  const lateSubm = buildBrief(subm, { codes: ['F-01'], now: new Date(2026, 2, 20) });
+  check('a submitted site is never called stale', !lateSubm.sites[0].warnings.some((w) => w.id === 'STALE'));
+
+  // Tabs the register does not list
+  const un = unregisteredSheets(model2);
+  check('a tab with tasks but no register row is reported by name', un.length === 1 && un[0].name === 'F-09' && un[0].tasks > 0, JSON.stringify(un));
+  check('it is not analysed or listed as a site', !model2.sites.some((s) => s.code === 'F-09') && !b.sites.some((s) => s.code === 'F-09'));
+  check('other parser problems are kept apart from it', otherProblems(model2).every((p) => !/F-09/.test(typeof p === 'string' ? p : p.message || '')));
+  const clean = await fixture();
+  check('a clean workbook reports no unregistered tabs', unregisteredSheets(clean).length === 0);
+  check('the scope rule still holds: one site selected, no other code in the brief',
+    !JSON.stringify(buildBrief(model2, { codes: ['F-01'], now: NOW })).match(/F-0[239]/));
+
+  // Every sheet milestone label is caught, ordinary labels are not
+  const probe = (label) => {
+    const m = { sites: [{ code: 'X', detail: { weeks: [{ label: 'W01', end: '2026-01-11' }, { label }], tasks: [{ weekly: ['WIP', 'Not started'] }], categories: [{ weekly: ['WIP', 'Not started'] }] } }] };
+    dropMilestoneColumns(m);
+    return m.sites[0].detail.weeks.length;
+  };
+  check('Submission, Target, Deadline, Due, Milestone, Planned are all treated as milestones', ['Submission', 'Target', 'Deadline', 'Due date', 'Milestone', 'Planned'].every((l) => probe(l) === 1));
+  check('W-numbers and plain dates are never dropped', ['W02', 'W10', 'Week 3', ''].every((l) => probe(l) === 2));
+  const empty = { sites: [{ code: 'X', detail: { weeks: [{ label: 'Submission', end: '2026-01-01' }], tasks: [{ weekly: ['Not started'] }], categories: [] } }] };
+  dropMilestoneColumns(empty);
+  check('a sheet whose only column is a milestone ends with no weeks, not a crash', empty.sites[0].detail.weeks.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
